@@ -221,19 +221,18 @@ void loop(void) {
         Serial.print(suffix);
       }
     } else if (inputString.startsWith("SETHEATER")) {
-      int index = inputString.substring(8).toInt();
+      int index = inputString.substring(9).toInt();
       char buffer[8];
       if (checkIndex(index, NBHEATER)) {
         heaterTab[index].heaterOn = inputString.substring(11,12)=="1";
         if (!heaterTab[index].heaterOn) {
           // Force heater stop
           setPin(heaterTab[index].pin, 0 );
-        } else {
-          inputString.substring(13).toCharArray(buffer, sizeof(buffer));
-          heaterTab[index].maxTemp = atof(buffer);
-          heaterTab[index].curCycle = heatCycle-1;
-          checkHeater(index);
         }
+        inputString.substring(13).toCharArray(buffer, sizeof(buffer));
+        heaterTab[index].maxTemp = atof(buffer);
+        heaterTab[index].curCycle = heatCycle-1;
+        checkHeater(index);
         Serial.print(prefix);
         getHeater(index);
         Serial.print(suffix);
