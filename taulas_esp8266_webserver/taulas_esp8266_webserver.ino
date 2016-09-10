@@ -10,9 +10,9 @@
  * - When the Arduino device sends an alert message, send the message to the callback url using Gareth message format
  * 
  * **Endpoints:**
- * taulas/alertCb?url=<URL_CALLBACK>: set the callback url to send alerts messages
+ * WEBSERVER_PREFIX/alertCb?url=<URL_CALLBACK>: set the callback url to send alerts messages
  * 
- * taulas?command=<COMMAND>: send a command to the Arduino device and send back the response
+ * WEBSERVER_PREFIX?command=<COMMAND>: send a command to the Arduino device and send back the response
  * 
  * Copyright 2016 Nicolas Mora <mail@babelouest.org>
  * 
@@ -37,7 +37,7 @@
 #include <ESP8266HTTPClient.h>
 
 // Serial connection speed
-#define SERIAL_BAUD 115200
+#define SERIAL_BAUD 9600
 
 // Webserver TCP port
 #define WEBSERVER_PORT 858
@@ -45,9 +45,8 @@
 // Set your wifi parameters
 const char * ssid = "*****";
 const char * password = "******";
-
-const char prefix = '{';
-const char suffix = '}';
+const char prefix = '<';
+const char suffix = '>';
 
 #define LEDWIFI    2 // LEDWIFI is on when the wifi is connected
 #define LEDARDUINO 0 // LEDARDUINO is on when the handshake with the Arduino is done
@@ -88,9 +87,9 @@ void sendPostMessage(String url, String postBody) {
     httpCode = http.POST(postBody);
   }
   if (httpCode == 200) {
-    Serial.print("{COMMENT: [HTTP] POST Alert OK}");
+    Serial.print("<COMMENT: [HTTP] POST Alert OK>");
   } else {
-    Serial.printf("{COMMENT: [HTTP] POST Alert failed, error: %d}", httpCode);
+    Serial.printf("<COMMENT: [HTTP] POST Alert failed, error: %d>", httpCode);
   }
   http.end();
 }
@@ -111,9 +110,9 @@ void sendGetMessage(String url) {
     httpCode = http.GET();
   }
   if (httpCode == 200) {
-    Serial.print("{COMMENT: [HTTP] GET Alert OK}");
+    Serial.print("<COMMENT: [HTTP] GET Alert OK>");
   } else {
-    Serial.printf("{COMMENT: [HTTP] GET Alert failed, error: %d}", httpCode);
+    Serial.printf("<COMMENT: [HTTP] GET Alert failed, error: %d>", httpCode);
   }
   http.end();
 }
@@ -128,6 +127,7 @@ serialResult serialRead(int timeout) {
   result.inputString = "";
   result.stringComplete = false;
   int timeCount = 0;
+  String len;
   
   Serial.flush();
   while (!result.stringComplete && (timeCount < timeout)) {
@@ -155,7 +155,7 @@ serialResult serialRead(int timeout) {
  * then Waits for the response
  * if the response is valid, return it
  */
-commandResult sendCommand(String command, int timeout, boolean check) {
+commandResult sendCommand(String command, int timeout) {
   commandResult cResult;
   serialResult sResult;
   Serial.print(prefix);
@@ -163,20 +163,12 @@ commandResult sendCommand(String command, int timeout, boolean check) {
   Serial.print(suffix);
   sResult = serialRead(timeout);
 
-  if (check) {
-    if (sResult.stringComplete && sResult.inputString.startsWith(prefix + command + ":")) {
-      // Command result is valid, remove command from result (backward compatibility)
-      // The command check has been added because sometimes, when 2 commands are sent at the same time
-      // the response you get is not necessary the one you expect
-      cResult.resultString = prefix;
-      cResult.resultString += sResult.inputString.substring(sResult.inputString.indexOf(":") + 1);
-      cResult.valid = true;
-    } else {
-      cResult.valid = false;
-    }
-  } else if (sResult.stringComplete) {
-      cResult.resultString = sResult.inputString;
-      cResult.valid = true;
+  if (sResult.stringComplete && sResult.inputString.startsWith(prefix + command.substring(0, command.indexOf("/")) + ":")) {
+    // Command result is valid, remove command from result (backward compatibility)
+    // The command check has been added because sometimes, when 2 commands are sent at the same time
+    // the response you get is not necessary the one you expect
+    cResult.resultString += sResult.inputString.substring(sResult.inputString.indexOf(":") + 1, sResult.inputString.length() - 1);
+    cResult.valid = true;
   } else {
     cResult.valid = false;
   }
@@ -188,17 +180,16 @@ commandResult sendCommand(String command, int timeout, boolean check) {
  */
 void handleCommand() {
   commandResult result;
-
   if (server.arg("command").length() > 0) {
-    result = sendCommand(server.arg("command"), timeoutCommand, true);
-  
+    result = sendCommand(server.arg("command"), timeoutCommand);
+
     if (result.valid) {
-      server.send(200, "text/plain", result.resultString);
+      server.send(200, "application/json", result.resultString);
     } else {
-      server.send(500, "text/plain", "Internal error");
+      server.send(500, "application/json", "{\"error\":\"Internal error\"}");
     }
   } else {
-    server.send(400, "text/plain", "Error, use url: /taulas?command=<YOUR_COMMAND>");
+    server.send(400, "application/json", "{\"error\":\"Error, use url: /taulas?command=<YOUR_COMMAND>\"}");
   }
   
 }
@@ -207,17 +198,16 @@ void handleCommand() {
  * Webservice callback used when an external user sends an alertCb call via the HTTP REST interface
  */
 void handleAlertCb() {
+  commandResult result;
   if (server.arg("url").length() > 0) {
-    alertCb = server.arg("url");
-    server.send(200, "text/plain", "ok, url callback set to "+alertCb);
-    if (deviceName != "") {
-      String postBody = "{\"priority\":\"LOW\",\"source\":\""+deviceName+"\",\"text\":\"Device connected\",\"tags\":[\""+deviceName+"\",\"connect\"]}";
-      sendPostMessage(alertCb, postBody);
+    result = sendCommand("URLALERT/"+server.arg("url"), timeoutCommand);
+    if (result.valid) {
+      server.send(200, "application/json", "{\"value\":\"ok\"}");
+    } else {
+      server.send(500, "application/json", "{\"error\":\"Internal error\"}");
     }
-  } else if (alertCb != "") {
-    server.send(200, "text/plain", alertCb);
   } else {
-    server.send(400, "text/plain", "Error, set alert url: /taulas/alertCb?url=<YOUR_URL_CALLBACK>");
+    server.send(400, "application/json", "{\"error\":\"Error, use url: /taulas/alertCb?url=<YOUR_COMMAND>\"}");
   }
 }
 
@@ -225,51 +215,30 @@ void handleAlertCb() {
  * Webservice called for the root (/) url
  */
 void handleRoot() {
-  server.send(200, "text/plain", "command, use url: /taulas?command=<YOUR_COMMAND>\nset alert url: /taulas/alertCb?url=<YOUR_URL_CALLBACK>");
+  server.send(200, "application/json", "{\"command_url\":\"/taulas?command=<YOUR_COMMAND>\",\"set_alert_url\":\"/taulas/alertCb?url=<YOUR_URL_CALLBACK>\"}");
 }
 
 /**
  * Webservice called for a 404 not found
  */
 void handleNotFound() {
-  server.send(404, "text/plain", "Not Found");
+  server.send(404, "application/json", "{\"error\":\"Not Found\"}");
 }
 
 /**
  * Read the serial bus for 'timeoutAlert' milliseconds
- * if an alert is sent from the Arduino, send it ot the callback alert url using Gareth message format
+ * if an alert is sent from the Arduino, send it ot the callback alert url using Angharad message format
+ * <alertCb>/alert/@submodule_name/@source/@element/@message/
  */
 void alert() {
   if (alertCb != "" && deviceName != "") {
     serialResult result;
+    String alerturlParams = "", startAlert = "{\"alert\":";
     result = serialRead(timeoutAlert);
-    if (result.stringComplete && result.inputString.startsWith("{ALERT:")) {
-  
-      int index = 0;
-      String jsonText = "Alert from: ";
-      String jsonTags = "";
-      String eltList = result.inputString.substring(7, result.inputString.length() -1);
-      while (eltList.indexOf(",", index) >= 0) {
-        String token = eltList.substring(index, eltList.indexOf(","));
-        if (jsonTags == "") {
-          jsonText += token;
-          jsonTags = "\"" + token + "\"";
-        } else {
-          jsonText += ", "+token;
-          jsonTags += ",\"" + token + "\"";
-        }
-        index = eltList.indexOf(",", index)+1;
-      }
-      String token = eltList.substring(index);
-      if (jsonTags == "") {
-        jsonText += token;
-        jsonTags = "\"" + token + "\"";
-      } else {
-        jsonText += ", "+token;
-        jsonTags += ",\"" + token + "\"";
-      }
-      String postBody = "{\"priority\":\"HIGH\",\"source\":\""+deviceName+"\",\"text\":\""+jsonText+"\",\"tags\":["+jsonTags+"]}";
-      sendPostMessage(alertCb, postBody);
+    if (result.stringComplete && result.inputString.startsWith(startAlert)) {
+      String element = result.inputString.substring(startAlert.length(), result.inputString.length()-2);
+      alerturlParams = "/alert/benoic/" + deviceName + "/" + element + "/Detection";
+      sendGetMessage(alertCb + alerturlParams);
     }
   }
 }
@@ -305,23 +274,12 @@ void setup(void) {
   // Handhake with the Arduino
   // Blinks the LEDARDUINO while connecting
   while (!setup) {
-    result = sendCommand("MARCO", timeoutCommand, false);
-    if (result.valid && result.resultString.endsWith("POLO}")) {
-      result = sendCommand("COMMANDSENDBACK/1", timeoutCommand, true);
-      if (result.valid) {
-        Serial.print(prefix);
-        Serial.print("COMMENT:OK");
-        Serial.print(suffix);
-      } else {
-        Serial.print(prefix);
-        Serial.print("COMMENT:COMMANDSENDBACK ERROR ");
-        Serial.print(result.resultString);
-        Serial.print(suffix);
-      }
+    result = sendCommand("MARCO", timeoutCommand);
+    if (result.valid && result.resultString.endsWith("POLO\"}")) {
 
-      result = sendCommand("NAME", timeoutCommand, true);
+      result = sendCommand("NAME", timeoutCommand);
       if (result.valid) {
-        deviceName = result.resultString.substring(1, result.resultString.length() - 1);
+        deviceName = result.resultString.substring(10, result.resultString.length() - 2);
         Serial.print(prefix);
         Serial.print("COMMENT:HELLO ");
         Serial.print(deviceName);

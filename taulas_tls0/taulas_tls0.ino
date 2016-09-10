@@ -6,15 +6,15 @@
  * Accepts commands using the format 'prefix'<COMMAND_NAME_AND_PARAMETERS>'suffix'
  * 
  * Examples:
- * - {OVERVIEW}
- * - {SENSOR/TEMPINT0/1}
+ * - <OVERVIEW>
+ * - <SENSOR/TEMPINT0/1>
  * 
  * Then return the result of the command between prefix and suffix too
- * If sendCommand is true, send in the beginning of the result the command and ':'
+ * Send in the beginning of the result the command and ':'
+ * Result data is in json format, because json
  * 
- * Examples with the command {SENSOR/TEMPINT0/1}:
- * - with sendCommand to true: {SENSOR/TEMPINT0/1:23.5}
- * - without sendCommand to true: {23.5}
+ * Examples with the command <SENSOR/TEMPINT0/1> :
+ * - with sendCommand to true: <SENSOR/TEMPINT0/1:{"value":23.5}>
  * 
  * Copyright 2016 Nicolas Mora <mail@babelouest.org>
  * 
@@ -38,9 +38,8 @@
 #include <DallasTemperature.h>
 #include <DHT.h>
 
-#define SERIAL_BAUD 115200
+#define SERIAL_BAUD 9600
 
-// Use different names if you have different Taulas devices on the same Angharad System
 #define DEVICENAME "TLS0"
 
 /**
@@ -49,7 +48,6 @@
  * - a DHT22 temperature and humidity sensor for indoor on pin 6
  * - a DS18B20 temperature sensor for outdoor temperature on pin 7
  * - a PIR Motion sensor on pin 2
- * - a light sensor on analog pin 0
  */
 #define DHTPIN 2               // DHT temperature and humidity sensor (for inside)
 #define DHTTYPE DHT22          // the DHT sensor is a DHT22 (more accurate than the DHT11)
@@ -59,7 +57,7 @@
 
 #define DALLASPIN 4            // Dallas temperature sensor (for outside)
 
-#define LIGHTSENSORPIN 0       // Analog ping where the light sensor is plugged into
+#define LIGHTSENSORPIN 0       // Analog pin where the light sensor is plugged into
 
 /**
  * Structures used to facilitate sensor readings
@@ -99,8 +97,8 @@ boolean commandSentBack = false;   // If true, the full command is sent back in 
 #define LOOP_DELAY 20 // Delay between each loop
 
 // Prefix and suffix for all commands and results
-char prefix = '{';
-char suffix = '}';
+char prefix = '<';
+char suffix = '>';
 
 // Sensors global variables
 dhtTempHum dhtTempHumTab[1];
@@ -165,37 +163,28 @@ float getLight(int index) {
  * Send OVERVIEW result
  * if refresh is true, force refresh of the readings
  */
-void overview(boolean refresh) {
-  Serial.print(prefix);
-  if (commandSentBack) {
-    if (refresh) {
-      Serial.print("REFRESH:");
-    } else {
-      Serial.print("OVERVIEW:");
-    }
-  }
-  if (refresh) {
-    updateDht(0);
-  }
-  Serial.print("NAME:");
-  Serial.print(DEVICENAME);
-
-  Serial.print(";SENSORS");
-  Serial.print(",TEMPINT0:");
-  Serial.print(dhtTempHumTab[0].temperature, 1);
+void overview() {
   
-  Serial.print(",HUMINT0:");
+  updateDht(0);
+
+  Serial.print(prefix);
+  Serial.print("OVERVIEW:{\"sensors\":{");
+  Serial.print("\"TEMPINT0\":");
+  Serial.print(dhtTempHumTab[0].temperature, 1);
+
+  Serial.print(",\"HUMINT0\":");
   Serial.print(dhtTempHumTab[0].humidity, 1);
   
-  Serial.print(",TEMPEXT:");
+  Serial.print(",\"TEMPEXT\":");
   Serial.print(getDallasTemp(), 1);
   
-  Serial.print(",MVT0:");
+  Serial.print(",\"MVT0\":");
   Serial.print(mvtDetected(0), 1);
   
-  Serial.print(",LUM0:");
+  Serial.print(",\"LUM0\":");
   Serial.print(getLight(LIGHTSENSORPIN), 1);
   
+  Serial.print("}}");
   Serial.print(suffix);
 }
 
@@ -257,102 +246,74 @@ void loop(void) {
     String params = commandInput.substring(commandInput.indexOf("/")+1);
     if (command.startsWith("COMMENT:")) {
       // Comment send, do nothing
-    } else if (command == "COMMANDSENDBACK") {
-      if (params == "1") {
-        commandSentBack = true;
-      } else {
-        commandSentBack = false;
-      }
-      if (commandSentBack) {
-        Serial.print(prefix);
-        Serial.print(commandInput);
-        Serial.print(suffix);
-      } else {
-        Serial.print(prefix);
-        Serial.print("0");
-        Serial.print(suffix);
-      }
     } else if (command == "NAME") {
       Serial.print(prefix);
-      if (commandSentBack) {
-        Serial.print(commandInput);
-        Serial.print(":");
-      }
+      Serial.print("NAME:{\"value\":\"");
       Serial.print(DEVICENAME);
+      Serial.print("\"}");
       Serial.print(suffix);
     } else if (command == "MARCO") {
       Serial.print(prefix);
-      if (commandSentBack) {
-        Serial.print(commandInput);
-        Serial.print(":");
-      }
-      Serial.print("POLO");
+      Serial.print("MARCO:{\"value\":\"POLO\"}");
       Serial.print(suffix);
     } else if (command == "OVERVIEW") {
-      overview(false);
-    } else if (command == "REFRESH") {
-      overview(true);
+      overview();
     } else if (command == "SENSOR") {
+      int index = params.substring(params.length()-1).toInt();
       if (params.startsWith("TEMPINT")) {
-        int index = params.substring(7).toInt();
-        if (commandInput.endsWith("/1")) {
-          dhtTempHumTab[index].temperature = getDhtTemp(index);
-        }
+        dhtTempHumTab[index].temperature = getDhtTemp(index);
         Serial.print(prefix);
-        if (commandSentBack) {
-          Serial.print(commandInput);
-          Serial.print(":");
-        }
+        Serial.print(command);
+        Serial.print(":");
+        Serial.print("{\"value\":");
         Serial.print(dhtTempHumTab[index].temperature, 1);
+        Serial.print("}");
         Serial.print(suffix);
       } else if (params.startsWith("HUMINT")) {
-        int index = params.substring(6).toInt();
-        if (params.endsWith("/1")) {
-          dhtTempHumTab[index].humidity = getDhtHum(index);
-        }
+        dhtTempHumTab[index].humidity = getDhtHum(index);
         Serial.print(prefix);
-        if (commandSentBack) {
-          Serial.print(commandInput);
-          Serial.print(":");
-        }
+        Serial.print(command);
+        Serial.print(":");
+        Serial.print("{\"value\":");
         Serial.print(dhtTempHumTab[index].humidity, 1);
+        Serial.print("}");
         Serial.print(suffix);
       } else if (params.startsWith("TEMPEXT")) {
         Serial.print(prefix);
-        if (commandSentBack) {
-          Serial.print(commandInput);
-          Serial.print(":");
-        }
+        Serial.print(command);
+        Serial.print(":");
+        Serial.print("{\"value\":");
         Serial.print(getDallasTemp(), 1);
+        Serial.print("}");
         Serial.print(suffix);
       } else if (params.startsWith("MVT")) {
-        int index = params.substring(3).toInt();
         Serial.print(prefix);
-        if (commandSentBack) {
-          Serial.print(commandInput);
-          Serial.print(":");
-        }
+        Serial.print(command);
+        Serial.print(":");
+        Serial.print("{\"value\":");
         Serial.print(mvtDetected(index));
+        Serial.print("}");
         Serial.print(suffix);
       } else if (params.startsWith("LUM")) {
-        int index = params.substring(3).toInt();
         Serial.print(prefix);
-        if (commandSentBack) {
-          Serial.print(commandInput);
-          Serial.print(":");
-        }
+        Serial.print(command);
+        Serial.print(":");
+        Serial.print("{\"value\":");
         Serial.print(getLight(index));
+        Serial.print("}");
         Serial.print(suffix);
       } else {
+        Serial.print(prefix);
+        Serial.print(command);
+        Serial.print(":");
+        Serial.print("{\"error\":\"sensor not found\"}");
+        Serial.print(suffix);
       }
     } else {
       Serial.print(prefix);
-      if (commandSentBack) {
-        Serial.print(commandInput);
-        Serial.print(":");
-      }
-      Serial.print("Syntax error, command not found: ");
-      Serial.print(commandInput);
+      Serial.print(command);
+      Serial.print(":");
+      Serial.print("{\"error\":\"command not found\"}");
       Serial.print(suffix);
     }
     commandInput = "";
@@ -375,8 +336,9 @@ void loop(void) {
     mvtDetectTab[0].lastDetect = millis();
     if (!mvtDetectTab[0].sent) {
       Serial.print(prefix);
-      Serial.print("ALERT:");
+      Serial.print("{\"alert\":\"");
       Serial.print("MVT0");
+      Serial.print("\"}");
       Serial.print(suffix);
       mvtDetectTab[0].sent = true;
     }
