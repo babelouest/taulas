@@ -1,0 +1,14 @@
+[Unit]
+Description=Taulas serial gateway
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/taulas-rpi-serial
+User=pi
+KillMode=process
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target
+Alias=taulas-rpi-serial
