@@ -416,7 +416,7 @@ char * get_name_arduino(struct _taulas_config * taulas_config) {
       y_log_message(Y_LOG_LEVEL_ERROR, "Error parsing response: %s", buffer);
     }
   } else {
-    y_log_message(Y_LOG_LEVEL_ERROR, "Error sending name command");
+    y_log_message(Y_LOG_LEVEL_ERROR, "Error sending command NAME");
   }
   
   return to_return;
@@ -425,33 +425,49 @@ char * get_name_arduino(struct _taulas_config * taulas_config) {
 /**
  * Send a command to the arduino, then read and parse the response
  */
-json_t * send_command_arduino(struct _taulas_config * taulas_config, const char * command) {
+json_t * send_command_arduino(struct _taulas_config * taulas_config, const char * command, int retry) {
   char buffer[1025];
   json_t * to_return = NULL;
-  char * serial_command;
-  int strlen_prefix_command = strchr(command, '/')!=NULL?strchr(command, '/')-command:strlen(command);
+  char * command_save, * command_save_ptr, * command_prefix, * serial_command;
   
   if (taulas_config != NULL && command != NULL) {
     if (pthread_mutex_lock(&taulas_config->lock)) {
       y_log_message(Y_LOG_LEVEL_ERROR, "Error getting mutex");
     } else {
+      serialport_flush(taulas_config->serial_fd);
       serial_command = msprintf("%s%s%s", COMMAND_PREFIX, command, COMMAND_SUFFIX);
       if (serialport_write(taulas_config->serial_fd, serial_command) == 0) {
         if (!serialport_read_until(taulas_config->serial_fd, buffer, READ_UNTIL, 1024, taulas_config->timeout)) {
-          buffer[strlen(buffer) - 1] = '\0';
-          to_return = json_loads(buffer+strlen_prefix_command+2, JSON_DECODE_ANY, NULL);
-          if (to_return == NULL) {
-            y_log_message(Y_LOG_LEVEL_ERROR, "Error parsing buffer %s", buffer+strlen_prefix_command+2);
+          command_save = nstrdup(command);
+          command_save_ptr = command_save;
+          if (command_save != NULL) {
+            command_prefix = strtok(command_save, "/");
+            if (command_prefix != NULL) {
+              buffer[strlen(buffer) - 1] = '\0';
+              to_return = json_loads(buffer+strlen(command_prefix)+2*sizeof(char), JSON_DECODE_ANY, NULL);
+              if (to_return == NULL) {
+                y_log_message(Y_LOG_LEVEL_ERROR, "Error parsing buffer %s", buffer+strlen(command_prefix)+2*sizeof(char));
+                y_log_message(Y_LOG_LEVEL_ERROR, "command_prefix is %s, Full buffer is %s", command_prefix, buffer);
+              }
+            } else {
+              y_log_message(Y_LOG_LEVEL_ERROR, "Error getting command_prefix for buffer %s", buffer);
+            }
+          } else {
+            y_log_message(Y_LOG_LEVEL_ERROR, "Error nstrdup command for buffer %s", buffer);
           }
+          free(command_save_ptr);
         } else {
           y_log_message(Y_LOG_LEVEL_ERROR, "Error reading response");
         }
       } else {
         y_log_message(Y_LOG_LEVEL_ERROR, "Error sending command");
-        serialport_close(taulas_config->serial_fd);
-        if (detect_device_arduino(taulas_config) && connect_device_arduino(taulas_config) != -1) {
-          y_log_message(Y_LOG_LEVEL_INFO, "Reconnect arduino succesfull");
-        }
+        if (retry) {
+          serialport_close(taulas_config->serial_fd);
+          if (detect_device_arduino(taulas_config) && connect_device_arduino(taulas_config) != -1) {
+            y_log_message(Y_LOG_LEVEL_INFO, "Reconnect arduino succesfull");
+            return send_command_arduino(taulas_config, command, 0);
+          }
+        } 
       }
       free(serial_command);
       pthread_mutex_unlock(&taulas_config->lock);
@@ -470,9 +486,9 @@ int callback_send_command (const struct _u_request * request, struct _u_response
   struct _taulas_config * taulas_config = (struct _taulas_config *)user_data;
   
   if (taulas_config != NULL) {
-    response->json_body = send_command_arduino(taulas_config, u_map_get(request->map_url, "command"));
+    response->json_body = send_command_arduino(taulas_config, u_map_get(request->map_url, "command"), 1);
     if (response->json_body == NULL) {
-      y_log_message(Y_LOG_LEVEL_ERROR, "Error sending command");
+      y_log_message(Y_LOG_LEVEL_ERROR, "Error sending command %s", u_map_get(request->map_url, "command"));
       response->status = 500;
     } else if (json_object_get(response->json_body, "error") != NULL) {
       response->status = 404;

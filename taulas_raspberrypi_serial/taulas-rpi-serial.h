@@ -85,7 +85,7 @@ void print_help(const char * app_name);
 int detect_device_arduino(struct _taulas_config * taulas_config);
 int connect_device_arduino(struct _taulas_config * taulas_config);
 char * get_name_arduino(struct _taulas_config * taulas_config);
-json_t * send_command_arduino(struct _taulas_config * taulas_config, const char * command);
+json_t * send_command_arduino(struct _taulas_config * taulas_config, const char * command, int retry);
 void handle_alert_arduino(struct _taulas_config * taulas_config);
 
 // Callback functions
