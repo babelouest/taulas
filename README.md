@@ -15,6 +15,8 @@ The Arduino used is an Arduino UNO, it has 4 different sensors:
 
 ## Arduino communication protocol
 
+### Taulas protocol 1.0
+
 The Arduino device communicates with the outside world with the serial bus with a simple protocol. A command and an answer must start and end with braces `{ }`.
 
 The commands available in this arduino devices are:
@@ -27,6 +29,18 @@ The commands available in this arduino devices are:
 - `{SENSOR/<sensor name>}[/1]}`: Get a specific sensor value. Note, ending the command with `/1` forces the reading of the value even if the timeout isn't reached.
 
 Also, when the motion sensor is triggered, an alert command is sent to the serial bus. The alert has the following format: `{ALERT:<sensor name>}`.
+
+### Taulas protocol 2.0
+
+The command format uses `<` and `>` to delimit a command and a response, and the response data is in json format.
+
+For example, sending the command `MARCO` to the device must be of the following form:
+`<MARCO>`
+And the response will have the following form:
+`<MARCO:{"result":"POLO"}>`
+
+An overview command response will have the following format:
+`<OVERVIEW:{"sensors":{"SE1":{"value":33,"unit":"C"},"SE2":45},"switches":{"SW1":0},"dimmers":{"DI1":25}}>`
 
 # ESP8266 Wifi to serial device
 
