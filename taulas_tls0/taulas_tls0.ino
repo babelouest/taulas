@@ -13,8 +13,8 @@
  * Send in the beginning of the result the command and ':'
  * Result data is in json format, because json
  * 
- * Examples with the command <SENSOR/TEMPINT0/1> :
- * - with sendCommand to true: <SENSOR/TEMPINT0/1:{"value":23.5}>
+ * Examples with the command <SENSOR/TEMPINT0> :
+ * - with sendCommand to true: <SENSOR:{"value":23.5}>
  * 
  * Copyright 2016 Nicolas Mora <mail@babelouest.org>
  * 
