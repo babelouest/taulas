@@ -1,7 +1,7 @@
 Taulas
 ======
 
-Multiple sensors and web interface using an Arduino UNO and a ESP8266.
+Multiple sensors and web interface using an Arduino UNO and an HTTP interface (ESP8266 or linux).
 
 Part of the Angharad project for house automation. This source code files allows to get sensors values from an HTTP interface, and send an alert to another HTTP API when the motion sensor is triggered.
 
@@ -17,18 +17,17 @@ The Arduino used is an Arduino UNO, it has 4 different sensors:
 
 ### Taulas protocol 1.0
 
-The Arduino device communicates with the outside world with the serial bus with a simple protocol. A command and an answer must start and end with braces `{ }`.
+The Arduino device communicates with the outside world with the serial bus with a simple protocol. A command and an answer must start and end with diples `< >`.
 
 The commands available in this arduino devices are:
 
-- `{COMMENT:<any string>}`: No action
-- `{COMMANDSENDBACK/<bool>}`: Send back the command in the answer for the next commands
-- `{NAME}`: Send back the device name defined in constant DEVICENAME
-- `{MARCO}`: Pings the Arduino, the answer must be `{POLO}` or `{MARCO:POLO}` depending on your `{COMMANDSENDBACK/<bool>}` setting
-- `{OVERVIEW}/{REFRESH}`: Get the complete list of sensors and their values using the following format: `{[OVERVIEW/REFRESH:]NAME:<device name>;SENSORS,TEMPINT0:<value>,HUMINT0:<value>,TEMPEXT:<value>,MVT0:<bool>,LUM0:<value>}`. Note, `{REFRESH}` forces the reading of the values even if the timeout isn't reached.
-- `{SENSOR/<sensor name>}[/1]}`: Get a specific sensor value. Note, ending the command with `/1` forces the reading of the value even if the timeout isn't reached.
+- `<COMMENT:any string>`: No action
+- `<NAME>`: Send back the device name defined in constant DEVICENAME
+- `<MARCO>`: Pings the Arduino, the answer must be `<MARCO:{"result":"POLO"}>`
+- `<OVERVIEW>`: Get the complete list of sensors and their values using the following format: ``<OVERVIEW:{"sensors":{"SE1":{"value":33,"unit":"C"},"SE2":45},"switches":{"SW1":0},"dimmers":{"DI1":25}}>`.
+- `<SENSOR/sensor_name>`: Get a specific sensor value, the answer uses the format `<SENSOR:{"value":sensor_value}>`.
 
-Also, when the motion sensor is triggered, an alert command is sent to the serial bus. The alert has the following format: `{ALERT:<sensor name>}`.
+Also, when the motion sensor is triggered, an alert command is sent to the serial bus. The alert has the following format: `<ALERT:sensor_name>`.
 
 ### Taulas protocol 2.0
 
@@ -36,7 +35,7 @@ The command format uses `<` and `>` to delimit a command and a response, and the
 
 For example, sending the command `MARCO` to the device must be of the following form:
 `<MARCO>`
-And the response will have the following form:
+And the response will have the following format:
 `<MARCO:{"result":"POLO"}>`
 
 An overview command response will have the following format:
@@ -54,13 +53,41 @@ This device has 2 different endpoints:
 - `taulas/alertCb?<callback_url>`: specify the callback url api to call when an alert is triggered
 - `taulas?command=<COMMAND>`: send a command to the Arduino and send back its answer in the response
 
-# Example
+# Raspberry Pi to serial device
+
+A taulas interface application has been implemented for a Raspberry Pi (or any linux based device) using a USB cable between the RPi and the Arduino Taulas device.
+
+The source code is available in the `taulas_raspberrypi_serial` folder. You need [Ulfius](https://github.com/babelouest/ulfius) to compile. When Ulfius and its dependencies are installed, run the following commands:
+
+```shell
+$ make
+$ ./taulas-rpi-serial
+```
+
+This program has default parameters that can be overwritten, the online help will provide the list of parameters:
+
+```shell
+$ ./taulas-rpi-serial -h
+
+taulas-rpi-serial, serial interface with a taulas arduino device
+Options available:
+-h --help: Print this help message and exit
+-p --port: TCP Port to listen to, default 8585
+-u --url-prefix: url prefix for the webservice, default 'taulas'
+-s --serial-pattern: pattern to the serial file of the arduino, default '/dev/ttyACM'
+-b --baud: baud rate to connect to the Arduino, default 9600
+-t --timeout: timeout in seconds for serial reading, default 3000
+-l --log-level: log level for the application, values are NONE, ERROR, WARNING, INFO, DEBUG, default is 'DEBUG'
+-m --log-mode: log mode for the application, values are console, file or syslog, multiple values must be separated with a comma, default is 'console'
+-f --log-file: path to log file if log mode is file
+```
+
+# Example with Taulas 2.0 protocol
 
 When the 2 devices are on and connected, a call has the following format:
 
-- The client calls the url: `http://esp8266.ip.address:858/taulas?command=OVERVIEW`
-- The ESP8266 sends the following command to the Arduino UNO: `{OVERVIEW}`
-- The Aruino UNO sends back the following answer to the ESP8266: `{OVERVIEW:NAME:TLS0;SENSORS,TEMPINT0:22.4,HUMINT0:27.6,TEMPEXT:1.3,MVT0:0,LUM0:7.0}`
-- The ESP8266 skips the command in the Arduino answer and sends back to the client the following response: `{NAME:TLS0;SENSORS,TEMPINT0:22.4,HUMINT0:27.6,TEMPEXT:1.3,MVT0:0,LUM0:7.0}`
+- The client calls the url: `http://esp8266.ip.address:858/taulas?command=OVERVIEW` for an ESP8266 or `http://rpi.ip.address:8585/taulas/?command=OVERVIEW` for taulas-rpi-serial.
+- The ESP8266 or the Rpi sends the following command to the Arduino UNO: `<OVERVIEW>`
+- The Aruino UNO sends back the following answer: `<OVERVIEW:{"sensors":{"SE1":{"value":33,"unit":"C"},"SE2":45},"switches":{"SW1":0},"dimmers":{"DI1":25}}>`
+- The ESP8266 or the RPI skips the command in the Arduino answer and sends back to the client the following response: `{"sensors":{"SE1":{"value":33,"unit":"C"},"SE2":45},"switches":{"SW1":0},"dimmers":{"DI1":25}}`
 
-Thus, the answer can easily be parsed by a web application (as in Angharad system). The code can be easily adapted to send responses in JSON format.
