@@ -39,8 +39,8 @@ int main(int argc, char ** argv) {
   signal (SIGHUP, exit_handler);
   
   taulas_config.port = PORT_DEFAULT;
-  taulas_config.prefix = nstrdup(PREFIX_DEFAULT);
-  taulas_config.serial_pattern = nstrdup(SERIAL_PATTERN_DEFAULT);
+  taulas_config.prefix = o_strdup(PREFIX_DEFAULT);
+  taulas_config.serial_pattern = o_strdup(SERIAL_PATTERN_DEFAULT);
   taulas_config.baud = SERIAL_BAUD_DEFAULT;
   taulas_config.timeout = SERIAL_TIMEOUT_DEFAULT;
 #ifdef DEBUG
@@ -57,18 +57,18 @@ int main(int argc, char ** argv) {
     
     if (detect_device_arduino(&taulas_config)) {
       taulas_config.alert_url = NULL;
-      if (ulfius_init_instance(&instance, taulas_config.port, NULL) != U_OK) {
+      if (ulfius_init_instance(&instance, taulas_config.port, NULL, NULL) != U_OK) {
         y_log_message(Y_LOG_LEVEL_ERROR, "Error ulfius_init_instance, abort");
       } else {
         u_map_put(instance.default_headers, "Access-Control-Allow-Origin", "*");
     
         // Endpoint list declaration
-        ulfius_add_endpoint_by_val(&instance, "GET", "/", NULL, NULL, NULL, NULL, &callback_root, &taulas_config);
-        ulfius_add_endpoint_by_val(&instance, "GET", taulas_config.prefix, NULL, NULL, NULL, NULL, &callback_send_command, &taulas_config);
-        ulfius_add_endpoint_by_val(&instance, "GET", taulas_config.prefix, "/alertCb", NULL, NULL, NULL, &callback_get_alert_url, &taulas_config);
+        ulfius_add_endpoint_by_val(&instance, "GET", "/", NULL, 0, &callback_root, &taulas_config);
+        ulfius_add_endpoint_by_val(&instance, "GET", taulas_config.prefix, NULL, 0, &callback_send_command, &taulas_config);
+        ulfius_add_endpoint_by_val(&instance, "GET", taulas_config.prefix, "/alertCb", 0, &callback_get_alert_url, &taulas_config);
 
         // default_endpoint declaration
-        ulfius_set_default_endpoint(&instance, NULL, NULL, NULL, &callback_default, &taulas_config);
+        ulfius_set_default_endpoint(&instance, &callback_default, &taulas_config);
         if (ulfius_start_framework(&instance) != U_OK) {
           y_log_message(Y_LOG_LEVEL_ERROR, "Error ulfius_start_framework, abort");
         } else {
@@ -147,7 +147,7 @@ int build_config_from_args(int argc, char ** argv, struct _taulas_config * taula
         case 'u':
           if (optarg != NULL) {
             free(taulas_config->prefix);
-            taulas_config->prefix = nstrdup(optarg);
+            taulas_config->prefix = o_strdup(optarg);
             if (taulas_config->prefix == NULL) {
               fprintf(stderr, "Error allocating taulas_config->prefix, exiting\n");
               return 0;
@@ -161,7 +161,7 @@ int build_config_from_args(int argc, char ** argv, struct _taulas_config * taula
         case 's':
           if (optarg != NULL) {
             free(taulas_config->serial_pattern);
-            taulas_config->serial_pattern = nstrdup(optarg);
+            taulas_config->serial_pattern = o_strdup(optarg);
             if (taulas_config->serial_pattern == NULL) {
               fprintf(stderr, "Error allocating taulas_config->serial_pattern, exiting\n");
               return 0;
@@ -202,7 +202,7 @@ int build_config_from_args(int argc, char ** argv, struct _taulas_config * taula
           break;
         case 'm':
           if (optarg != NULL) {
-            tmp = nstrdup(optarg);
+            tmp = o_strdup(optarg);
             to_free = to_free;
             if (tmp == NULL) {
               fprintf(stderr, "Error allocating log_mode, exiting\n");
@@ -246,7 +246,7 @@ int build_config_from_args(int argc, char ** argv, struct _taulas_config * taula
           break;
         case 'f':
           if (optarg != NULL) {
-            taulas_config->log_file = nstrdup(optarg);
+            taulas_config->log_file = o_strdup(optarg);
             if (taulas_config->log_file == NULL) {
               fprintf(stderr, "Error allocating taulas_config->log_file, exiting\n");
               return 0;
@@ -370,7 +370,7 @@ int detect_device_arduino(struct _taulas_config * taulas_config) {
       if (taulas_config->serial_fd != -1) {
         serialport_flush(taulas_config->serial_fd);
         taulas_config->device_name = get_name_arduino(taulas_config);
-        taulas_config->serial_path = nstrdup(filename);
+        taulas_config->serial_path = o_strdup(filename);
         if (taulas_config->device_name != NULL) {
           to_return = 1;
         }
@@ -410,7 +410,7 @@ char * get_name_arduino(struct _taulas_config * taulas_config) {
     buffer[strlen(buffer) - 1] = '\0';
     tmp = json_loads(buffer+strlen("NAME")+2, JSON_DECODE_ANY, NULL);
     if (tmp != NULL) {
-      to_return = nstrdup(json_string_value(json_object_get(tmp, "value")));
+      to_return = o_strdup(json_string_value(json_object_get(tmp, "value")));
       json_decref(tmp);
     } else {
       y_log_message(Y_LOG_LEVEL_ERROR, "Error parsing response: %s", buffer);
@@ -438,7 +438,7 @@ json_t * send_command_arduino(struct _taulas_config * taulas_config, const char 
       serial_command = msprintf("%s%s%s", COMMAND_PREFIX, command, COMMAND_SUFFIX);
       if (serialport_write(taulas_config->serial_fd, serial_command) == 0) {
         if (!serialport_read_until(taulas_config->serial_fd, buffer, READ_UNTIL, 1024, taulas_config->timeout)) {
-          command_save = nstrdup(command);
+          command_save = o_strdup(command);
           command_save_ptr = command_save;
           if (command_save != NULL) {
             command_prefix = strtok(command_save, "/");
@@ -453,7 +453,7 @@ json_t * send_command_arduino(struct _taulas_config * taulas_config, const char 
               y_log_message(Y_LOG_LEVEL_ERROR, "Error getting command_prefix for buffer %s", buffer);
             }
           } else {
-            y_log_message(Y_LOG_LEVEL_ERROR, "Error nstrdup command for buffer %s", buffer);
+            y_log_message(Y_LOG_LEVEL_ERROR, "Error o_strdup command for buffer %s", buffer);
           }
           free(command_save_ptr);
         } else {
@@ -484,15 +484,18 @@ json_t * send_command_arduino(struct _taulas_config * taulas_config, const char 
  */
 int callback_send_command (const struct _u_request * request, struct _u_response * response, void * user_data) {
   struct _taulas_config * taulas_config = (struct _taulas_config *)user_data;
+  json_t * j_result;
   
   if (taulas_config != NULL) {
-    response->json_body = send_command_arduino(taulas_config, u_map_get(request->map_url, "command"), 1);
-    if (response->json_body == NULL) {
-      y_log_message(Y_LOG_LEVEL_ERROR, "Error sending command %s", u_map_get(request->map_url, "command"));
+    j_result = send_command_arduino(taulas_config, u_map_get(request->map_url, "command"), 1);
+    if (json_object_get(j_result, "error") != NULL && ulfius_set_json_body_response(response, 500, j_result) != U_OK) {
+      y_log_message(Y_LOG_LEVEL_ERROR, "Error ulfius_set_json_body_response");
       response->status = 500;
-    } else if (json_object_get(response->json_body, "error") != NULL) {
-      response->status = 404;
+    } else if (ulfius_set_json_body_response(response, 200, j_result) != U_OK) {
+      y_log_message(Y_LOG_LEVEL_ERROR, "Error ulfius_set_json_body_response");
+      response->status = 500;
     }
+    json_decref(j_result);
   } else {
     y_log_message(Y_LOG_LEVEL_ERROR, "Error taulas_config is NULL");
     response->status = 500;
@@ -527,9 +530,13 @@ int callback_default (const struct _u_request * request, struct _u_response * re
   struct _taulas_config * taulas_config = (struct _taulas_config *)user_data;
   char * command_url = msprintf("/%s?command=<YOUR_COMMAND>", taulas_config->prefix);
   char * set_alert_url = msprintf("/%s/alertCb?url=<YOUR_URL_CALLBACK>", taulas_config->prefix);
+  json_t * j_result = json_pack("{ssss}", "command_url", command_url, "set_alert_url", set_alert_url);
   
-  response->status = 404;
-  response->json_body = json_pack("{ssss}", "command_url", command_url, "set_alert_url", set_alert_url);
+  if (ulfius_set_json_body_response(response, 404, j_result) != U_OK) {
+    y_log_message(Y_LOG_LEVEL_ERROR, "Error ulfius_set_json_body_response");
+    response->status = 500;
+  }
+  json_decref(j_result);
   free(command_url);
   free(set_alert_url);
   return U_OK;
@@ -543,8 +550,13 @@ int callback_root (const struct _u_request * request, struct _u_response * respo
   struct _taulas_config * taulas_config = (struct _taulas_config *)user_data;
   char * command_url = msprintf("/%s?command=<YOUR_COMMAND>", taulas_config->prefix);
   char * set_alert_url = msprintf("/%s/alertCb?url=<YOUR_URL_CALLBACK>", taulas_config->prefix);
+  json_t * j_result = json_pack("{ssss}", "command_url", command_url, "set_alert_url", set_alert_url);
   
-  response->json_body = json_pack("{ssss}", "command_url", command_url, "set_alert_url", set_alert_url);
+  if (ulfius_set_json_body_response(response, 200, j_result) != U_OK) {
+    y_log_message(Y_LOG_LEVEL_ERROR, "Error ulfius_set_json_body_response");
+    response->status = 500;
+  }
+  json_decref(j_result);
   free(command_url);
   free(set_alert_url);
   return U_OK;
